@@ -22,15 +22,15 @@
 
 
 //???
-PFILA2 aptos;
-PFILA2 bloqueados;
-PFILA2 terminados;
-PFILA2 aguardando_join;
+FILA2 aptos;
+FILA2 bloqueados;
+FILA2 terminados;
+FILA2 aguardando_join;
 int inicializado = 0;
 int novotid = 0;
 ucontext_t dispatcher_ctxt; 
 ucontext_t kill_ctxt;
-TCB_t* main;
+TCB_t * main_thread;
 TCB_t* thread_atual;
 
 //
@@ -56,14 +56,16 @@ int	InsertByPrio(PFILA2 pfila, TCB_t *tcb) {
 		} while (NextFila2(pfila)==0);
 	}
 	return AppendFila2(pfila, (void *)tcb);
+	return 0;
 }
 
 // todas threads criadas devem retornar pra cá para serem mortas
 void kill_thread(){
+	printf("cheguei no kill");
 	TCB_t* novotcb;
 	novotcb = thread_atual;
 	int tid = novotcb->tid; //para a busca a seguir
-	AppendFila2(terminados, (void *) novotcb->tid);
+	AppendFila2(&terminados, (void *) novotcb->tid);
 	//talvez tenha que desalocar essa pilha? já que ela foi alocada antes?
 	free(novotcb->context.uc_stack.ss_sp);
 	//parece ser o suficiente para acabar com a thread, let's see
@@ -71,15 +73,15 @@ void kill_thread(){
 
 	//verificamos se há alguma thread trancada em um join por esta thread
 	JOIN_t* join_it;
-	if (FirstFila2(aguardando_join)==0) {	// pfile vazia?
+	if (FirstFila2(&aguardando_join)==0) {	// pfile vazia?
 		do {
-			join_it = (JOIN_t*) GetAtIteratorFila2(aguardando_join);
+			join_it = (JOIN_t*) GetAtIteratorFila2(&aguardando_join);
 			if (tid == join_it->tid) {
 				join_it->tid = -1;
-				DeleteAtIteratorFila2(aguardando_join);
+				DeleteAtIteratorFila2(&aguardando_join);
 				setcontext(&(join_it->context)); //retornamos o contexto para a função de join, que chamará um dispatcher 
 			}
-		} while (NextFila2(aguardando_join)==0);
+		} while (NextFila2(&aguardando_join)==0);
 	}
 	
 	
@@ -87,30 +89,33 @@ void kill_thread(){
 }
 
 void dispatcher(){
-	FirstFila2(aptos);
-	thread_atual = (TCB_t*)GetAtIteratorFila2(aptos);
-	DeleteAtIteratorFila2(aptos);
+	FirstFila2(&aptos);
+	thread_atual = (TCB_t*)GetAtIteratorFila2(&aptos);
+	DeleteAtIteratorFila2(&aptos);
 	thread_atual->state = EXEC;
 	startTimer();
 	setcontext(&(thread_atual->context));
 }
 
 void inicializar(){
-	CreateFila2(aptos);
-	CreateFila2(bloqueados);
-	CreateFila2(terminados);
-	CreateFila2(aguardando_join);
+	CreateFila2(&aptos);
+	CreateFila2(&bloqueados);
+	CreateFila2(&terminados);
+	CreateFila2(&aguardando_join);
+
 	//
-	main->tid = novotid;
+	main_thread = (TCB_t*) malloc(sizeof(TCB_t));
+
+	main_thread->tid = novotid;
 	novotid++;
-    	main->state = EXEC;
-    	main->prio = 0;
-    	thread_atual = main;
+    	main_thread->state = EXEC;
+    	main_thread->prio = 0;
+    	thread_atual = main_thread;
 	//
 	getcontext(&dispatcher_ctxt);
 	dispatcher_ctxt.uc_stack.ss_sp = malloc(16384);
 	dispatcher_ctxt.uc_stack.ss_size = 16384;
-	dispatcher_ctxt.uc_link = &(main->context);
+	dispatcher_ctxt.uc_link = &(main_thread->context);
 	makecontext(&dispatcher_ctxt, (void (*)(void))dispatcher, 0);
 
 	getcontext(&kill_ctxt);
@@ -120,8 +125,8 @@ void inicializar(){
 	makecontext(&kill_ctxt, (void (*)(void))kill_thread, 0); //as threads precisam voltar para a função de matar threads!	
 	
 	//
-	getcontext(&(main->context));
-	// finaliza inicialização, retorna ao primeiro comando da lib chamado e volta ao "fluxo" da main
+	getcontext(&(main_thread->context));
+	// finaliza inicialização, retorna ao primeiro comando da lib chamado e volta ao "fluxo" da main_thread
 }
 
 //
@@ -137,12 +142,13 @@ int cidentify (char *name, int size){
 		return 0;
 	}
 
+
 	return -1;
 }
 
 int ccreate (void* (*start)(void*), void *arg, int prio){
 	// garantia de inicialização da main e das filas
-	if (!inicializado){
+	if (inicializado==0){
 		inicializar();
 	}
 	// criação do Thread Control Block
@@ -158,7 +164,7 @@ int ccreate (void* (*start)(void*), void *arg, int prio){
     	novotcb->context.uc_link = &kill_ctxt;
    	makecontext(&(novotcb->context), (void (*)(void)) start, 1, arg);
    	novotcb->state = APTO;
-	InsertByPrio(aptos, novotcb);
+	InsertByPrio(&aptos, novotcb);
 	
 	return novotcb->tid;
 }
@@ -172,21 +178,22 @@ int cyield(void){
 	novotcb = thread_atual;
 	novotcb->prio += stopTimer();
 	novotcb->state = APTO;
-	InsertByPrio(aptos, novotcb);
+	InsertByPrio(&aptos, novotcb);
 	dispatcher();
 	
 	return 0;
 }
 
 int cjoin(int tid){
+	printf("entrei na join");
 	int tid_it;
-	if (FirstFila2(terminados)==0) {	// pfile vazia?
+	if (FirstFila2(&terminados)==0) {	// pfile vazia?
 		do {
-			tid_it = (int) GetAtIteratorFila2(terminados);
+			tid_it = (int) GetAtIteratorFila2(&terminados);
 			if (tid_it == tid) {
 				return 0;      //se a thread esperada já terminou retornamos 0
 			}
-		} while (NextFila2(terminados)==0);
+		} while (NextFila2(&terminados)==0);
 	}
 	
 	if (tid >= novotid)
@@ -196,7 +203,7 @@ int cjoin(int tid){
 	// quando a thread aguardada terminar
 	TCB_t* tcb_chamador = thread_atual;	
 	JOIN_t* join = (JOIN_t*) malloc(sizeof(JOIN_t));
-	AppendFila2(aguardando_join, join);
+	AppendFila2(&aguardando_join, join);
 	join->tid = tid;	
 	ucontext_t context;
 	getcontext(&context);    //contexto voltará aqui
@@ -204,19 +211,19 @@ int cjoin(int tid){
 
 	if (join->tid !=-1){  // GAMBIARRA quando o contexto vier após o térmido da thread aguardada o tid será -1
 		tcb_chamador->state = BLOQ;
-		AppendFila2(bloqueados, tcb_chamador);
+		AppendFila2(&bloqueados, tcb_chamador);
 		dispatcher();
 	}
 
 	//Acha e remove o tcb chamador da fila de bloqueados
-	if (FirstFila2(bloqueados)==0) {	// pfile vazia?
+	if (FirstFila2(&bloqueados)==0) {	// pfile vazia?
 		TCB_t *tcb_it;
 		do {
-			tcb_it = (TCB_t *) GetAtIteratorFila2(bloqueados);
+			tcb_it = (TCB_t *) GetAtIteratorFila2(&bloqueados);
 			if (tcb_chamador->tid == tcb_it->tid) {   //retorna o chamador para a fila de aptos
-				DeleteAtIteratorFila2(bloqueados);
+				DeleteAtIteratorFila2(&bloqueados);
 				tcb_chamador->state = APTO;
-				InsertByPrio(aptos, tcb_chamador);  //como retornar? dispatcher ou return 0? ): 
+				InsertByPrio(&aptos, tcb_chamador);  //como retornar? dispatcher ou return 0? ): 
 				// mudar o contexto da chamadora para cá?? sounds like madness....why not then
 				getcontext(&(tcb_chamador->context));
 				if(tcb_chamador->state == APTO){ //o dispatcher irá alterar o estado para EXEC
@@ -224,7 +231,7 @@ int cjoin(int tid){
 				} 
 				return 0;
 			}
-		} while (NextFila2(bloqueados)==0);
+		} while (NextFila2(&bloqueados)==0);
 	}
 	else{
 		return -1;  //se a fila de bloqueados estiver vázia, tem algo errado. (provável)	
@@ -265,7 +272,7 @@ int csignal(csem_t *sem){
 
 	sem->count++;
 	FirstFila2(sem->fila);
-	InsertByPrio(aptos, GetAtIteratorFila2(sem->fila));
+	InsertByPrio(&aptos, GetAtIteratorFila2(sem->fila));
 	DeleteAtIteratorFila2(sem->fila);
 
 	return 0;
