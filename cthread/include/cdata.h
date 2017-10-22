@@ -29,7 +29,12 @@ typedef struct s_TCB {
 	/* Se necessário, pode-se acresecentar campos nessa estrutura A PARTIR DAQUI! */
 	
 	
-} TCB_t; 
+} TCB_t;
+
+typedef struct s_JOIN {
+	ucontext_t context;
+	int tid;
+} JOIN_t; 
 
 
 #endif
