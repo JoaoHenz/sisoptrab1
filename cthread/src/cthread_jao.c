@@ -81,6 +81,8 @@ void kill_thread(){
 		do {
 			join_it = (JOIN_t) GetAtIteratorFila2(aguardando_join);
 			if (tid == join_it->tid) {
+				join_it->tid = -1;
+				DeleteAtIteratorFila2(aguardando_join);
 				setcontext(&(join_it->context)); //retornamos o contexto para a função de join, que chamará um dispatcher 
 			}
 		} while (NextFila2(aguardando_join)==0);
