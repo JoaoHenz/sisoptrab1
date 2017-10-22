@@ -126,6 +126,7 @@ void inicializar(){
 	
 	//
 	getcontext(&(main_thread->context));
+	inicializado = 1;
 	// finaliza inicialização, retorna ao primeiro comando da lib chamado e volta ao "fluxo" da main_thread
 }
 
