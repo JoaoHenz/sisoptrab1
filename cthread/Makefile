@@ -20,7 +20,7 @@ TST_DIR=./testes
 all: objeto movetoBin gloriousLib movetoLib
 
 objeto: $(SRC_DIR)/cthread.c $(INC_DIR)/cdata.h $(INC_DIR)/cthread.h $(INC_DIR)/support.h
-	$(CC) -c $(SRC_DIR)/cthread.c -Wall
+	$(CC) -m32 -c $(SRC_DIR)/cthread.c -Wall
 
 movetoBin:
 	mv cthread.o $(BIN_DIR)
